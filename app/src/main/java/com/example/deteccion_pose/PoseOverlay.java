@@ -56,7 +56,6 @@ public class PoseOverlay extends View {
 
         if (landmarks == null || landmarks.isEmpty()) return;
 
-        // 🧠 Calcular escalado respetando proporción
         float viewWidth = getWidth();
         float viewHeight = getHeight();
 
@@ -74,14 +73,12 @@ public class PoseOverlay extends View {
         linePaint.setColor(color);
         textPaint.setColor(color);
 
-        // 🔴 Dibujar puntos
         for (PoseLandmark landmark : landmarks) {
             float x = landmark.getPosition().x * scale + offsetX;
             float y = landmark.getPosition().y * scale + offsetY;
             canvas.drawCircle(x, y, 8f, dotPaint);
         }
 
-        // 🔵 Dibujar conexiones
         drawLine(canvas, PoseLandmark.LEFT_SHOULDER, PoseLandmark.RIGHT_SHOULDER, scale, offsetX, offsetY);
         drawLine(canvas, PoseLandmark.LEFT_SHOULDER, PoseLandmark.LEFT_ELBOW, scale, offsetX, offsetY);
         drawLine(canvas, PoseLandmark.LEFT_ELBOW, PoseLandmark.LEFT_WRIST, scale, offsetX, offsetY);
@@ -95,7 +92,6 @@ public class PoseOverlay extends View {
         drawLine(canvas, PoseLandmark.RIGHT_HIP, PoseLandmark.RIGHT_KNEE, scale, offsetX, offsetY);
         drawLine(canvas, PoseLandmark.RIGHT_KNEE, PoseLandmark.RIGHT_ANKLE, scale, offsetX, offsetY);
 
-        // 🟡 Texto
         String mensaje = isBadPosture ? "Mala postura" : "Buena postura";
         canvas.drawText(mensaje, viewWidth / 2f, 80f, textPaint);
     }
