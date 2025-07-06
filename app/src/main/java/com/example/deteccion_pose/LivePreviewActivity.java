@@ -1,4 +1,3 @@
-
 package com.example.deteccion_pose;
 
 import android.Manifest;
@@ -6,12 +5,16 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.view.View;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.Toast;
-import android.os.Build;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.CameraSelector;
@@ -27,63 +30,57 @@ import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.pose.Pose;
 import com.google.mlkit.vision.pose.PoseDetection;
 import com.google.mlkit.vision.pose.PoseDetector;
-import com.google.mlkit.vision.pose.defaults.PoseDetectorOptions;
+import com.google.mlkit.vision.pose.PoseLandmark;
+import com.google.mlkit.vision.pose.accurate.AccuratePoseDetectorOptions;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class LivePreviewActivity extends AppCompatActivity {
 
     private static final int REQUEST_CODE_PERMISSIONS = 10;
-    private static final int REQUEST_IMAGE_CAPTURE = 1;
-    private static final int REQUEST_PICK_IMAGE = 2;
-
-    private static final String[] REQUIRED_PERMISSIONS = new String[]{
-            Manifest.permission.CAMERA,
-            Manifest.permission.READ_EXTERNAL_STORAGE
-    };
-
 
     private PreviewView previewView;
+    private ImageView imageView;
     private PoseOverlay poseOverlay;
     private PoseDetector poseDetector;
     private ExecutorService cameraExecutor;
     private Button btnCamera, btnGallery;
 
+    private final ActivityResultLauncher<Intent> galleryLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            result -> {
+                if (result.getResultCode() == RESULT_OK && result.getData() != null) {
+                    Uri uri = result.getData().getData();
+                    try {
+                        Bitmap bitmap = MediaStore.Images.Media.getBitmap(getContentResolver(), uri);
+                        processBitmapWithPoseDetection(bitmap);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                        Toast.makeText(this, "Error cargando imagen", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            }
+    );
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_live_preview);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ActivityCompat.requestPermissions(
-                    this,
-                    new String[]{Manifest.permission.CAMERA, Manifest.permission.READ_MEDIA_IMAGES},
-                    REQUEST_CODE_PERMISSIONS
-            );
-        } else {
-            ActivityCompat.requestPermissions(
-                    this,
-                    new String[]{Manifest.permission.CAMERA, Manifest.permission.READ_EXTERNAL_STORAGE},
-                    REQUEST_CODE_PERMISSIONS
-            );
-        }
 
         previewView = findViewById(R.id.previewView);
+        imageView = findViewById(R.id.imageView);
+        poseOverlay = findViewById(R.id.poseOverlay);
         btnCamera = findViewById(R.id.btnCamera);
         btnGallery = findViewById(R.id.btnGallery);
 
         cameraExecutor = Executors.newSingleThreadExecutor();
 
-        poseOverlay = new PoseOverlay(this);
-        addContentView(poseOverlay, new PreviewView.LayoutParams(
-                PreviewView.LayoutParams.MATCH_PARENT,
-                PreviewView.LayoutParams.MATCH_PARENT
-        ));
-
-        PoseDetectorOptions options =
-                new PoseDetectorOptions.Builder()
-                        .setDetectorMode(PoseDetectorOptions.STREAM_MODE)
+        AccuratePoseDetectorOptions options =
+                new AccuratePoseDetectorOptions.Builder()
+                        .setDetectorMode(AccuratePoseDetectorOptions.STREAM_MODE)
                         .build();
 
         poseDetector = PoseDetection.getClient(options);
@@ -91,19 +88,22 @@ public class LivePreviewActivity extends AppCompatActivity {
         if (allPermissionsGranted()) {
             startCamera();
         } else {
-            ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS);
+            String[] perms = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                    ? new String[]{Manifest.permission.CAMERA, Manifest.permission.READ_MEDIA_IMAGES}
+                    : new String[]{Manifest.permission.CAMERA, Manifest.permission.READ_EXTERNAL_STORAGE};
+            ActivityCompat.requestPermissions(this, perms, REQUEST_CODE_PERMISSIONS);
         }
 
         btnCamera.setOnClickListener(v -> {
-            Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-            if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
-                startActivityForResult(takePictureIntent, REQUEST_IMAGE_CAPTURE);
-            }
+            imageView.setVisibility(View.GONE);
+            previewView.setVisibility(View.VISIBLE);
+            poseOverlay.setLandmarks(null);
+            startCamera();
         });
 
         btnGallery.setOnClickListener(v -> {
-            Intent pickIntent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
-            startActivityForResult(pickIntent, REQUEST_PICK_IMAGE);
+            Intent pick = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+            galleryLauncher.launch(pick);
         });
     }
 
@@ -117,9 +117,9 @@ public class LivePreviewActivity extends AppCompatActivity {
         }
     }
 
-
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_CODE_PERMISSIONS) {
             if (allPermissionsGranted()) {
                 startCamera();
@@ -131,77 +131,67 @@ public class LivePreviewActivity extends AppCompatActivity {
     }
 
     private void startCamera() {
-        ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
-                ProcessCameraProvider.getInstance(this);
-
+        ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
         cameraProviderFuture.addListener(() -> {
             try {
-                ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
+                ProcessCameraProvider provider = cameraProviderFuture.get();
 
-                ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
+                ImageAnalysis analysis = new ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
+                analysis.setAnalyzer(cameraExecutor, this::analyzeImage);
 
-                imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
-
-                CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
-
+                CameraSelector selector = CameraSelector.DEFAULT_BACK_CAMERA;
                 androidx.camera.core.Preview preview = new androidx.camera.core.Preview.Builder().build();
                 preview.setSurfaceProvider(previewView.getSurfaceProvider());
 
-                cameraProvider.unbindAll();
-                cameraProvider.bindToLifecycle(
-                        this, cameraSelector, preview, imageAnalysis);
-
+                provider.unbindAll();
+                provider.bindToLifecycle(this, selector, preview, analysis);
             } catch (Exception e) {
                 e.printStackTrace();
+                Toast.makeText(this, "Error con la cámara", Toast.LENGTH_LONG).show();
             }
         }, ContextCompat.getMainExecutor(this));
     }
 
-    private void analyzeImage(ImageProxy imageProxy) {
-        @SuppressWarnings("UnsafeOptInUsageError")
-        InputImage image = InputImage.fromMediaImage(imageProxy.getImage(),
-                imageProxy.getImageInfo().getRotationDegrees());
+    private void analyzeImage(ImageProxy proxy) {
+        if (proxy.getImage() == null) {
+            proxy.close();
+            return;
+        }
 
+        InputImage image = InputImage.fromMediaImage(proxy.getImage(), proxy.getImageInfo().getRotationDegrees());
         poseDetector.process(image)
                 .addOnSuccessListener(this::processPose)
                 .addOnFailureListener(Throwable::printStackTrace)
-                .addOnCompleteListener(task -> imageProxy.close());
+                .addOnCompleteListener(task -> proxy.close());
     }
 
     private void processPose(Pose pose) {
-        if (!pose.getAllPoseLandmarks().isEmpty()) {
-            poseOverlay.setLandmarks(pose.getAllPoseLandmarks());
-        }
+        List<PoseLandmark> landmarks = pose.getAllPoseLandmarks();
+        if (landmarks == null || landmarks.isEmpty()) return;
+        poseOverlay.setPreviewSize(previewView.getWidth(), previewView.getHeight());
+        poseOverlay.setLandmarks(landmarks);
     }
 
-    private void processBitmapWithPoseDetection(Bitmap bitmap) {
-        InputImage image = InputImage.fromBitmap(bitmap, 0);
-        poseDetector.process(image)
+    private void processBitmapWithPoseDetection(Bitmap bmp) {
+        imageView.setImageBitmap(bmp);
+        imageView.setVisibility(View.VISIBLE);
+        previewView.setVisibility(View.GONE);
+        poseOverlay.setPreviewSize(bmp.getWidth(), bmp.getHeight());
+
+        InputImage image = InputImage.fromBitmap(bmp, 0);
+        AccuratePoseDetectorOptions options =
+                new AccuratePoseDetectorOptions.Builder()
+                        .setDetectorMode(AccuratePoseDetectorOptions.SINGLE_IMAGE_MODE)
+                        .build();
+
+        PoseDetector staticImageDetector = PoseDetection.getClient(options);
+
+        staticImageDetector.process(image)
                 .addOnSuccessListener(this::processPose)
-                .addOnFailureListener(Throwable::printStackTrace);
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-
-        if (resultCode == RESULT_OK) {
-            if (requestCode == REQUEST_IMAGE_CAPTURE && data != null) {
-                Bundle extras = data.getExtras();
-                Bitmap imageBitmap = (Bitmap) extras.get("data");
-                processBitmapWithPoseDetection(imageBitmap);
-            } else if (requestCode == REQUEST_PICK_IMAGE && data != null) {
-                Uri imageUri = data.getData();
-                try {
-                    Bitmap bitmap = MediaStore.Images.Media.getBitmap(this.getContentResolver(), imageUri);
-                    processBitmapWithPoseDetection(bitmap);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
+                .addOnFailureListener(e -> Toast.makeText(this, "Error detectando pose", Toast.LENGTH_SHORT).show())
+                .addOnCompleteListener(task -> staticImageDetector.close());
     }
 
     @Override

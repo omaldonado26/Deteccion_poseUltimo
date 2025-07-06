@@ -26,7 +26,6 @@ public class RecomendacionesActivity extends AppCompatActivity {
         btnIrADeteccion.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // Cambia MainActivity.class por el nombre real de tu actividad de detección de poses
                 Intent intent = new Intent(RecomendacionesActivity.this, LivePreviewActivity.class);
                 startActivity(intent);
             }

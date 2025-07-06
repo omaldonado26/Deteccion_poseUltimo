@@ -20,11 +20,11 @@ public class EjerciciosActivity extends AppCompatActivity {
         TextView txtEjercicios = findViewById(R.id.txt_ejercicios);
         txtEjercicios.setText(
                 "✅ Estiramiento de cuello\n\n" +
-                        "➡ Gira lentamente la cabeza de un lado a otro. Mantén cada lado durante 10 segundos.\n\n" +
+                        "✅Gira lentamente la cabeza de un lado a otro. Mantén cada lado durante 10 segundos.\n\n" +
                         "✅ Estiramiento de hombros\n\n" +
-                        "➡ Sube los hombros como si quisieras tocar tus orejas, mantén 5 segundos y baja lentamente.\n\n" +
+                        "✅Sube los hombros como si quisieras tocar tus orejas, mantén 5 segundos y baja lentamente.\n\n" +
                         "✅ Postura de la cobra\n\n" +
-                        "➡ Acuéstate boca abajo y empuja tu pecho hacia arriba con las manos. Mantén por 15 segundos.\n\n" +
+                        "✅Acuéstate boca abajo y empuja tu pecho hacia arriba con las manos. Mantén por 15 segundos.\n\n" +
                         "✅ Repetir 3 veces cada uno a diario para mejores resultados."
         );
     }
